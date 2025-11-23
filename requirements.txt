@@ -1,0 +1,19 @@
+# Requirements for Crack Classification Project
+# Install all packages with: pip install -r requirements.txt
+
+# Core scientific computing
+numpy>=2.2.0
+
+# Image processing
+pillow>=12.0.0
+
+# Machine learning
+scikit-learn>=1.7.0
+
+# Model persistence
+joblib>=1.5.0
+
+# Dependencies (installed automatically with scikit-learn)
+scipy>=1.16.0
+threadpoolctl>=3.6.0
+
