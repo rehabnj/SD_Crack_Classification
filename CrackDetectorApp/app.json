@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Crack Detector",
+    "slug": "crack-detector",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.crackdetector.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs camera access to capture images of surfaces for crack detection.",
+        "NSPhotoLibraryUsageDescription": "This app needs photo library access to select images for crack detection."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.crackdetector.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Crack Detector to access your camera to capture images for analysis."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Crack Detector to access your photos to select images for analysis."
+        }
+      ]
+    ]
+  }
+}
+
