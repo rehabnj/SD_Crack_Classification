@@ -45,7 +45,7 @@ export default function ResultCard({ isProcessing, result, confidence }: ResultC
         <View style={styles.processingCard}>
           <ActivityIndicator size="large" color="#22d3ee" />
           <Text style={styles.processingText}>Analyzing surface...</Text>
-          <Text style={styles.processingSubtext}>AI is examining the image</Text>
+          <Text style={styles.processingSubtext}>ML is examining the image</Text>
         </View>
       </View>
     );
