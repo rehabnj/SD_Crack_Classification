@@ -3,7 +3,6 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as tf from '@tensorflow/tfjs';
-// Import platform adapter directly to get WebGL backend without react-native-fs
 import '@tensorflow/tfjs-react-native/dist/platform_react_native';
 import jpeg from 'jpeg-js';
 
@@ -29,26 +28,21 @@ interface UseCrackDetectorReturn {
 let tfjsModel: tf.LayersModel | null = null;
 
 async function loadModelFromAssets(): Promise<tf.LayersModel> {
-  // tf.ready() will use WebGL via expo-gl (GPU) if available, falling back to CPU
   await tf.ready();
 
-  // Metro parses JSON files directly — require() returns the object, not an asset ID
   const modelJson = require('../../assets/model/model.json');
 
-  // Load weight binary
   const weightsAsset = Asset.fromModule(require('../../assets/model/group1-shard1of1.bin'));
   await weightsAsset.downloadAsync();
   const weightsB64 = await FileSystem.readAsStringAsync(weightsAsset.localUri!, {
     encoding: 'base64' as any,
   });
 
-  // base64 → ArrayBuffer using fetch (much faster than manual char loop)
   const dataUri = `data:application/octet-stream;base64,${weightsB64}`;
   const response = await fetch(dataUri);
   const weightsBuffer = await response.arrayBuffer();
   const weightsBytes = new Uint8Array(weightsBuffer);
 
-  // Build TF.js model from topology + weights
   const model = await tf.loadLayersModel({
     load: async () => ({
       modelTopology: modelJson.modelTopology,
@@ -102,7 +96,6 @@ export function useCrackDetector(): UseCrackDetectorReturn {
     setError(null);
 
     try {
-      // Resize to 224x224 JPEG and get base64
       const manipulated = await manipulateAsync(
         imageUri,
         [{ resize: { width: MODEL_INPUT_SIZE, height: MODEL_INPUT_SIZE } }],
@@ -110,18 +103,16 @@ export function useCrackDetector(): UseCrackDetectorReturn {
       );
       if (!manipulated.base64) throw new Error('Failed to get image data');
 
-      // base64 → Uint8Array JPEG bytes
       const binaryStr = atob(manipulated.base64);
       const jpegBytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i++) {
         jpegBytes[i] = binaryStr.charCodeAt(i);
       }
 
-      // Decode JPEG → raw RGBA pixels
       const rawImage = jpeg.decode(jpegBytes, { useTArray: true });
       if (!rawImage?.data) throw new Error('JPEG decode failed');
 
-      // RGBA → Float32 RGB, MobileNetV2 preprocessing: [0,255] → [-1,1]
+      // MobileNetV2 preprocessing: [0, 255] → [-1, 1]
       const inputData = new Float32Array(MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * 3);
       for (let i = 0; i < MODEL_INPUT_SIZE * MODEL_INPUT_SIZE; i++) {
         inputData[i * 3 + 0] = rawImage.data[i * 4 + 0] / 127.5 - 1.0;
@@ -129,7 +120,6 @@ export function useCrackDetector(): UseCrackDetectorReturn {
         inputData[i * 3 + 2] = rawImage.data[i * 4 + 2] / 127.5 - 1.0;
       }
 
-      // Run inference
       const outputTensor = tf.tidy(() => {
         const imgTensor = tf.tensor(inputData, [1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, 3]);
         return tfjsModel!.predict(imgTensor) as tf.Tensor;

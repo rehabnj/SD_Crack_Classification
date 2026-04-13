@@ -129,7 +129,6 @@ export default function App() {
     );
   }
 
-  // Model failed to load (common with Expo Go — use a dev build: npx expo run:android / run:ios)
   if (!isModelReady) {
     return (
       <SafeAreaView style={styles.container}>

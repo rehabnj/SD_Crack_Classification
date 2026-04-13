@@ -1,1 +1,12 @@
 Concrete_Crack.zip
+.claude/
+tfjs_model/
+poster.html
+poster_figures/
+generate_charts.py
+generate_hero_chart.py
+docs/
+SETUP.md
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
