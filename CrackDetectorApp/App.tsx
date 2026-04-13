@@ -31,14 +31,18 @@ export default function App() {
   const cameraRef = useRef<CameraView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   
-  const { 
-    isModelLoaded, 
-    isProcessing, 
-    result, 
+  const {
+    isModelLoaded,
+    isModelReady,
+    modelLoadError,
+    isProcessing,
+    result,
     confidence,
+    error,
     loadModel,
+    retryLoadModel,
     detectCrack,
-    reset 
+    reset
   } = useCrackDetector();
 
   useEffect(() => {
@@ -125,6 +129,30 @@ export default function App() {
     );
   }
 
+  // Model failed to load (common with Expo Go — use a dev build: npx expo run:android / run:ios)
+  if (!isModelReady) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="light" />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.permissionTitle}>Model Not Available</Text>
+          <Text style={[styles.permissionText, { marginBottom: 16 }]}>
+            The on-device model did not load, so analysis cannot run. You will not see confidence scores until this works.
+          </Text>
+          <Text
+            style={[styles.permissionText, { fontSize: 13, color: '#64748b' }]}
+            selectable
+          >
+            {modelLoadError ?? 'Unknown error'}
+          </Text>
+          <TouchableOpacity style={styles.permissionButton} onPress={() => retryLoadModel()}>
+            <Text style={styles.permissionButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // Permission request screen
   if (!cameraPermission?.granted) {
     return (
@@ -204,10 +232,11 @@ export default function App() {
           >
             <Animated.View style={[styles.resultContainer, { opacity: fadeAnim }]}>
               <Image source={{ uri: imageUri }} style={styles.resultImage} />
-              <ResultCard 
+              <ResultCard
                 isProcessing={isProcessing}
                 result={result}
                 confidence={confidence}
+                error={error}
               />
             </Animated.View>
           </ScrollView>

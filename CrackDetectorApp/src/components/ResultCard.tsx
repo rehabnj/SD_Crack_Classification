@@ -12,9 +12,10 @@ interface ResultCardProps {
   isProcessing: boolean;
   result: DetectionResult;
   confidence: number;
+  error?: string | null;
 }
 
-export default function ResultCard({ isProcessing, result, confidence }: ResultCardProps) {
+export default function ResultCard({ isProcessing, result, confidence, error }: ResultCardProps) {
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -52,7 +53,16 @@ export default function ResultCard({ isProcessing, result, confidence }: ResultC
   }
 
   if (!result) {
-    return null;
+    return (
+      <View style={styles.container}>
+        <View style={[styles.processingCard, { borderColor: 'rgba(239, 68, 68, 0.3)' }]}>
+          <Text style={[styles.processingText, { color: '#ef4444' }]}>Detection Failed</Text>
+          <Text style={[styles.processingSubtext, { textAlign: 'center', marginTop: 8 }]}>
+            {error ?? 'Unknown error. Try restarting the app.'}
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   const isCrack = result === 'crack';
