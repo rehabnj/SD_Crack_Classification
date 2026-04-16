@@ -105,6 +105,11 @@ export default function App() {
     reset();
   };
 
+  const handleDemoTap = async () => {
+    setMode('result');
+    await detectCrack(imageUri ?? '');
+  };
+
   const toggleCameraFacing = () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
   };
@@ -223,14 +228,18 @@ export default function App() {
           </View>
         )}
 
-        {mode === 'result' && imageUri && (
-          <ScrollView 
+        {mode === 'result' && (
+          <ScrollView
             style={styles.resultScrollView}
             contentContainerStyle={styles.resultScrollContent}
             showsVerticalScrollIndicator={true}
           >
             <Animated.View style={[styles.resultContainer, { opacity: fadeAnim }]}>
-              <Image source={{ uri: imageUri }} style={styles.resultImage} />
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.resultImage} />
+              ) : (
+                <Image source={require('./assets/splash.png')} style={styles.resultImage} />
+              )}
               <ResultCard
                 isProcessing={isProcessing}
                 result={result}
@@ -241,6 +250,13 @@ export default function App() {
           </ScrollView>
         )}
       </View>
+
+      {/* Hidden demo tap — bottom right corner */}
+      <TouchableOpacity
+        style={styles.demoTrigger}
+        onPress={handleDemoTap}
+        activeOpacity={1}
+      />
 
       {/* Action Buttons */}
       <View style={styles.actions}>
@@ -641,6 +657,13 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 18,
     fontWeight: '700',
+  },
+  demoTrigger: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 72,
+    height: 72,
   },
 });
 

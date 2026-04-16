@@ -1,15 +1,11 @@
-import { useState, useCallback } from 'react';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-react-native/dist/platform_react_native';
+import { useState, useCallback, useRef } from 'react';
+import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
+import * as ImageManipulator from 'expo-image-manipulator';
 import jpeg from 'jpeg-js';
 
-const MODEL_INPUT_SIZE = 224;
-const CONFIDENCE_THRESHOLD = 0.5;
-
 export type DetectionResult = 'crack' | 'no_crack' | null;
+
+const INPUT_SIZE = 224;
 
 interface UseCrackDetectorReturn {
   isModelLoaded: boolean;
@@ -25,38 +21,6 @@ interface UseCrackDetectorReturn {
   reset: () => void;
 }
 
-let tfjsModel: tf.LayersModel | null = null;
-
-async function loadModelFromAssets(): Promise<tf.LayersModel> {
-  await tf.ready();
-
-  const modelJson = require('../../assets/model/model.json');
-
-  const weightsAsset = Asset.fromModule(require('../../assets/model/group1-shard1of1.bin'));
-  await weightsAsset.downloadAsync();
-  const weightsB64 = await FileSystem.readAsStringAsync(weightsAsset.localUri!, {
-    encoding: 'base64' as any,
-  });
-
-  const dataUri = `data:application/octet-stream;base64,${weightsB64}`;
-  const response = await fetch(dataUri);
-  const weightsBuffer = await response.arrayBuffer();
-  const weightsBytes = new Uint8Array(weightsBuffer);
-
-  const model = await tf.loadLayersModel({
-    load: async () => ({
-      modelTopology: modelJson.modelTopology,
-      weightSpecs: modelJson.weightsManifest[0].weights,
-      weightData: weightsBytes.buffer,
-      format: modelJson.format,
-      generatedBy: modelJson.generatedBy,
-      convertedBy: modelJson.convertedBy,
-    }),
-  });
-
-  return model;
-}
-
 export function useCrackDetector(): UseCrackDetectorReturn {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [isModelReady, setIsModelReady] = useState(false);
@@ -66,75 +30,80 @@ export function useCrackDetector(): UseCrackDetectorReturn {
   const [confidence, setConfidence] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  const modelRef = useRef<TensorflowModel | null>(null);
+
   const loadModel = useCallback(async () => {
     setIsModelLoaded(false);
-    setModelLoadError(null);
     setIsModelReady(false);
+    setModelLoadError(null);
     try {
-      tfjsModel = await loadModelFromAssets();
+      const model = await loadTensorflowModel(
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('../../assets/crack_detector.tflite')
+      );
+      modelRef.current = model;
+      setIsModelLoaded(true);
       setIsModelReady(true);
-      setIsModelLoaded(true);
-    } catch (e: any) {
-      setModelLoadError(e?.message ?? String(e));
-      setIsModelLoaded(true);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setModelLoadError(msg);
+      setIsModelLoaded(true); // loading attempt is done
+      setIsModelReady(false);
     }
   }, []);
 
-  const retryLoadModel = useCallback(async () => {
-    tfjsModel = null;
-    await loadModel();
-  }, [loadModel]);
-
   const detectCrack = useCallback(async (imageUri: string) => {
-    if (!tfjsModel) {
+    if (!modelRef.current) {
       setError('Model not loaded');
       return;
     }
+
     setIsProcessing(true);
     setResult(null);
     setConfidence(0);
     setError(null);
 
     try {
-      const manipulated = await manipulateAsync(
+      // 1. Resize to 224×224 and get base64 JPEG
+      const resized = await ImageManipulator.manipulateAsync(
         imageUri,
-        [{ resize: { width: MODEL_INPUT_SIZE, height: MODEL_INPUT_SIZE } }],
-        { format: SaveFormat.JPEG, base64: true }
+        [{ resize: { width: INPUT_SIZE, height: INPUT_SIZE } }],
+        { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
-      if (!manipulated.base64) throw new Error('Failed to get image data');
 
-      const binaryStr = atob(manipulated.base64);
-      const jpegBytes = new Uint8Array(binaryStr.length);
+      if (!resized.base64) throw new Error('Failed to encode image as base64');
+
+      // 2. Decode JPEG → raw RGBA pixels
+      const binaryStr = atob(resized.base64);
+      const rawBytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i++) {
-        jpegBytes[i] = binaryStr.charCodeAt(i);
+        rawBytes[i] = binaryStr.charCodeAt(i);
+      }
+      const decoded = jpeg.decode(rawBytes, { useTArray: true });
+
+      // 3. Build Float32Array [224×224×3] normalised to [-1, 1] (MobileNetV2)
+      const input = new Float32Array(INPUT_SIZE * INPUT_SIZE * 3);
+      const { data } = decoded;
+      for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+        input[j]     = (data[i]     / 127.5) - 1.0; // R
+        input[j + 1] = (data[i + 1] / 127.5) - 1.0; // G
+        input[j + 2] = (data[i + 2] / 127.5) - 1.0; // B
+        // skip alpha channel (data[i+3])
       }
 
-      const rawImage = jpeg.decode(jpegBytes, { useTArray: true });
-      if (!rawImage?.data) throw new Error('JPEG decode failed');
+      // 4. Run TFLite inference — sigmoid output: 0 = no crack, 1 = crack
+      const outputs = await modelRef.current.run([input]);
+      const prob = (outputs[0] as Float32Array)[0];
 
-      // MobileNetV2 preprocessing: [0, 255] → [-1, 1]
-      const inputData = new Float32Array(MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * 3);
-      for (let i = 0; i < MODEL_INPUT_SIZE * MODEL_INPUT_SIZE; i++) {
-        inputData[i * 3 + 0] = rawImage.data[i * 4 + 0] / 127.5 - 1.0;
-        inputData[i * 3 + 1] = rawImage.data[i * 4 + 1] / 127.5 - 1.0;
-        inputData[i * 3 + 2] = rawImage.data[i * 4 + 2] / 127.5 - 1.0;
-      }
-
-      const outputTensor = tf.tidy(() => {
-        const imgTensor = tf.tensor(inputData, [1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, 3]);
-        return tfjsModel!.predict(imgTensor) as tf.Tensor;
-      });
-
-      const prob = (await outputTensor.data())[0];
-      outputTensor.dispose();
-
-      const isCrack = prob >= CONFIDENCE_THRESHOLD;
+      const isCrack = prob >= 0.5;
       const conf = Math.round(isCrack ? prob * 100 : (1 - prob) * 100);
 
       setResult(isCrack ? 'crack' : 'no_crack');
       setConfidence(conf);
-    } catch (e: any) {
-      setError(e?.message ?? 'Inference failed');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Inference failed';
+      setError(msg);
+      setResult(null);
     } finally {
       setIsProcessing(false);
     }
@@ -143,8 +112,8 @@ export function useCrackDetector(): UseCrackDetectorReturn {
   const reset = useCallback(() => {
     setResult(null);
     setConfidence(0);
-    setIsProcessing(false);
     setError(null);
+    setIsProcessing(false);
   }, []);
 
   return {
@@ -156,7 +125,7 @@ export function useCrackDetector(): UseCrackDetectorReturn {
     confidence,
     error,
     loadModel,
-    retryLoadModel,
+    retryLoadModel: loadModel,
     detectCrack,
     reset,
   };
